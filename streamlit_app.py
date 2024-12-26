@@ -16,8 +16,9 @@ def get_token_info(symbol):
         # Direct access to info dictionary
         print("Token Info:", token.info)  # This will print all available info
         return {
-            'name': token.info.get('name', 'Unknown'),
+            'info': token.info,
             'symbol': symbol,
+            'name': symbol
         }
     except Exception as e:
         print(f"Error getting token info: {e}")
@@ -29,7 +30,7 @@ def get_crypto_patterns(crypto_symbol, btc_reference, interval):
     
     # Get crypto data
     crypto = yf.Ticker(crypto_symbol)
-    crypto_data = crypto.history(period="max", interval=interval)
+    crypto_data = crypto.history(period="1y", interval=interval)
     print(f"Crypto {crypto_symbol} data range: {crypto_data.index[0]} to {crypto_data.index[-1]}")
     print(f"Total crypto data points: {len(crypto_data)}")
     
@@ -38,7 +39,7 @@ def get_crypto_patterns(crypto_symbol, btc_reference, interval):
     
     # Get BTC historical data
     btc = yf.Ticker(btc_reference)
-    btc_data = btc.history(period="max", interval=interval)
+    btc_data = btc.history(period="10y", interval=interval)
     print(f"BTC data range: {btc_data.index[0]} to {btc_data.index[-1]}")
     print(f"Total BTC data points: {len(btc_data)}")
     
@@ -122,8 +123,8 @@ def main():
         # Get token info
         token_info = get_token_info(crypto_symbol)
         if token_info:
-            st.subheader(f"Analyzing {token_info['name']} ({token_info['symbol']})")
-            st.write(f"Market Cap: {token_info['market_cap']}")
+            st.subheader(f"Analyzing {token_info['info']} ({token_info['symbol']})")
+            st.write(f"Info : {token_info['info']}")
             
             # Get patterns
             data_dic, current_values = get_crypto_patterns(
