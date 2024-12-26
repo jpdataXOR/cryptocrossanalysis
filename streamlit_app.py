@@ -13,12 +13,10 @@ def get_token_info(symbol):
     """Get basic token information from Yahoo Finance"""
     try:
         token = yf.Ticker(symbol)
-        # Direct access to info dictionary
-        print("Token Info:", token.info)  # This will print all available info
         return {
             'info': token.info,
             'symbol': symbol,
-            'name': symbol
+            'name': token.info.get('shortName', symbol)
         }
     except Exception as e:
         print(f"Error getting token info: {e}")
@@ -31,42 +29,36 @@ def get_crypto_patterns(crypto_symbol, btc_reference, interval):
     # Get crypto data
     crypto = yf.Ticker(crypto_symbol)
     crypto_data = crypto.history(period="1y", interval=interval)
-    print(f"Crypto {crypto_symbol} data range: {crypto_data.index[0]} to {crypto_data.index[-1]}")
-    print(f"Total crypto data points: {len(crypto_data)}")
     
-    # Get most recent month of crypto data
-    crypto_recent = crypto_data.tail(30 if interval == "1d" else 720)  # 30 days or 720 hours
+    # Get most recent data (last 8 periods or equivalent)
+    lookback_period = min(8, len(crypto_data) - 1)
+    crypto_recent = crypto_data.tail(lookback_period + 1)  # Ensure we have enough for percentage difference
     
     # Get BTC historical data
     btc = yf.Ticker(btc_reference)
     btc_data = btc.history(period="10y", interval=interval)
-    print(f"BTC data range: {btc_data.index[0]} to {btc_data.index[-1]}")
-    print(f"Total BTC data points: {len(btc_data)}")
     
-    # Create U/D pattern for current crypto (using recent data)
+    # Create U/D pattern for current crypto
     crypto_pattern = ''.join(['U' if crypto_recent.iloc[i]['Close'] >= crypto_recent.iloc[i-1]['Close'] else 'D'
-                            for i in range(1, len(crypto_recent))])
+                              for i in range(1, len(crypto_recent))])
     
     # Get latest pattern (last 8 periods)
     current_pattern = crypto_pattern[-8:]
-    print(f"Current pattern being searched: {current_pattern}")
     
     # Create U/D pattern for BTC historical data
     btc_pattern = ''.join(['U' if btc_data.iloc[i]['Close'] >= btc_data.iloc[i-1]['Close'] else 'D'
                           for i in range(1, len(btc_data))])
     
     # Exclude recent BTC data to avoid correlation
-    exclude_periods = 720 if interval == "1h" else 30  # Last month in hours or days
+    exclude_periods = 720 if interval == "1h" else 30
     btc_pattern = btc_pattern[:-exclude_periods]
     btc_data = btc_data.iloc[:-exclude_periods]
     
     # Find matches in BTC history
     index_dict = {}
     pattern_length = len(current_pattern)
-    print(f"Searching for pattern of length: {pattern_length}")
     
     indices = [index.start() for index in re.finditer(current_pattern, btc_pattern)]
-    print(f"Found {len(indices)} matching patterns in BTC history")
     
     if len(indices) > 2:
         for matched_index in indices[1:]:
@@ -84,11 +76,8 @@ def get_crypto_patterns(crypto_symbol, btc_reference, interval):
         'date': crypto_recent.iloc[count].name.strftime('%d-%b-%Y %H:%M' if interval == "1h" else '%d-%b-%Y'),
         'close': crypto_recent.iloc[count]['Close'],
         'percentage_difference': ((crypto_recent.iloc[count]['Close'] - crypto_recent.iloc[count+1]['Close']) /
-                                crypto_recent.iloc[count+1]['Close']) * 100
-    } for count in range(min(8, len(crypto_recent)-1))]
-    
-    print(f"Processed {len(current_values)} current values")
-    print(f"Found {len(index_dict)} unique pattern matches")
+                                   crypto_recent.iloc[count+1]['Close']) * 100
+    } for count in range(-lookback_period, 0)]
     
     return index_dict, current_values
 
@@ -98,18 +87,18 @@ def print_difference_data(arg_array, index, matched_length, forward_length):
         'date': arg_array.iloc[count].name.strftime('%d-%b-%Y %H:%M'),
         'close': arg_array.iloc[count]['Close'],
         'percentage_difference': ((arg_array.iloc[count]['Close'] - arg_array.iloc[count+1]['Close']) /
-                                arg_array.iloc[count+1]['Close']) * 100
+                                   arg_array.iloc[count+1]['Close']) * 100
     } for count in range(index, index + matched_length)]
 
     indices = [{
         'date': arg_array.iloc[count].name.strftime('%d-%b-%Y %H:%M'),
         'close': arg_array.iloc[count]['Close'],
         'percentage_difference': ((arg_array.iloc[count-1]['Close'] - arg_array.iloc[count]['Close']) /
-                                arg_array.iloc[count]['Close']) * 100
+                                   arg_array.iloc[count]['Close']) * 100
     } for count in range(index, index - forward_length, -1)]
 
     future_average = sum(index['percentage_difference']
-                        for index in indices) / len(indices)
+                         for index in indices) / len(indices)
     return indices, matched, future_average
 
 def main():
@@ -123,8 +112,8 @@ def main():
         # Get token info
         token_info = get_token_info(crypto_symbol)
         if token_info:
-            st.subheader(f"Analyzing {token_info['info']} ({token_info['symbol']})")
-            st.write(f"Info : {token_info['info']}")
+            st.subheader(f"Analyzing {token_info['name']} ({token_info['symbol']})")
+            st.write(f"Info: {token_info['info']}")
             
             # Get patterns
             data_dic, current_values = get_crypto_patterns(
@@ -138,10 +127,10 @@ def main():
                 st.subheader(f"Current {token_info['name']} Prices")
                 
                 dates = [datetime.strptime(data['date'], '%d-%b-%Y %H:%M' if selected_interval == "1h" else '%d-%b-%Y')
-                        for data in current_values]
+                         for data in current_values]
                 current_prices = [data['close'] for data in current_values]
                 current_trace = go.Scatter(x=dates, y=current_prices, mode='lines+markers',
-                                        name='Current Prices', marker=dict(color='blue'))
+                                           name='Current Prices', marker=dict(color='blue'))
 
                 fig_current = go.Figure(data=[current_trace])
                 fig_current.update_layout(
@@ -172,7 +161,7 @@ def main():
                         future_prices.append(future_prices[-1] * (1 + future_returns[j]))
                     
                     future_dates = [last_date + timedelta(hours=j+1) if selected_interval == "1h" else last_date + timedelta(days=j+1) 
-                                  for j in range(10)]
+                                    for j in range(10)]
                     
                     future_trace = go.Scatter(
                         x=future_dates, 
